@@ -1,6 +1,6 @@
 ---
 title: "STAT/MATH 495: Problem Set 04"
-author: "WRITE YOUR NAME HERE"
+author: "Jonathan Che"
 date: "2017-10-03"
 output:
   html_document:
@@ -18,8 +18,7 @@ set.seed(76)
 
 # Collaboration
 
-Please indicate who you collaborated with on this assignment:
-
+This assignment was done on my own.
 
 # Load packages, data, model formulas
 
@@ -41,6 +40,8 @@ model4_formula <- as.formula("Balance ~ Income + Limit + Rating")
 model5_formula <- as.formula("Balance ~ Income + Limit + Rating + Age")
 model6_formula <- as.formula("Balance ~ Income + Limit + Rating + Age + Cards")
 model7_formula <- as.formula("Balance ~ Income + Limit + Rating + Age + Cards + Education")
+formula_list <- c(model1_formula, model2_formula, model3_formula, 
+                  model4_formula, model5_formula, model6_formula, model7_formula)
 ```
 
 ... where `credit_train` is defined below, along with `credit_test`.
@@ -56,16 +57,23 @@ credit_test <- credit %>%
 
 # RMSE vs number of coefficients
 
+Now, I train the seven given models on the given training set, and plot both the training and test RMSE against the number of coefficients in the model.
+
 ```{r, echo=TRUE, warning=FALSE, message=FALSE}
-# Placeholder vectors of length 7. For now, I've filled them with arbitrary 
-# values; you will fill these in
-RMSE_train <- runif(n=7)
-RMSE_test <- runif(n=7)
+rmse <- function(x, y){
+  return(sqrt(mean((x-y)^2)))
+}
+# Train models on training data
+model_list <- lapply(formula_list, function(x) lm(x, data=credit_train))
+# Run models on training data and compute RMSE
+training_values <- lapply(model_list, function(x) predict(x, newdata=credit_train))
+RMSE_train <- sapply(training_values, function(x) rmse(x, credit_train$Balance))
+# Run models on test data and compute RMSE
+y_hats <- lapply(model_list, function(x) predict(x, newdata=credit_test))
+RMSE_test <- sapply(y_hats, function(x) rmse(x, credit_test$Balance))
+```
 
-
-# Do your work here:
-
-
+```{r, echo=FALSE}
 # Save results in a data frame. Note this data frame is in wide format.
 results <- data_frame(
   num_coefficients = 1:7,
@@ -92,8 +100,11 @@ ggplot(results, aes(x=num_coefficients, y=RMSE, col=type)) +
 
 # Interpret the graph
 
-Compare and contrast the two curves and hypothesize as to the root cause of any differences.
+The two curves behave as expected. In general, training error is always less than test error. This is because regression models are computed to effectively minimize MSE (and thus RMSE) on the given training set. Thus, one would expect the RMSE on a separate test set to be higher than the training error.
 
+Both curves show that both training and test error decreases as the models grow from one to three coefficients. While the addition of the fourth through seventh coefficients continues to decrease training error, though, it actually increases the test error. This is due to overfitting. These models are trained on training sets of only 20 observations. As such, regression models with lots of coefficients (i.e. flexibility) are able to more accurately model the outcomes of the 20 training observations. This is why training error continues to decrease as the regression models are given more coefficients/flexibility. 
+
+When the regression models are given too many coefficients to work with (i.e. too much flexibility), however, they begin to model not only the underlying relationships between the predictors and the response but also the random noise associated with these relationships. While modeling noise works to improve estimates on the given training data, it actually hurts model generalizability, as new observations are expected to have different kinds of random noise. In other words, models with too much flexibility can overfit small training sets and capture too much of the noise rather than the underlying signal. This is why test error begins to increase again after four regression coefficients. 
 
 
 # Bonus
@@ -102,6 +113,49 @@ Repeat the whole process, but let `credit_train` be a random sample of size 380
 from `credit` instead of 20. Now compare and contrast this graph with the
 one above and hypothesize as to the root cause of any differences.
 
-```{r, echo=FALSE}
-
+```{r}
+set.seed(79)
+credit_train <- credit %>% 
+  sample_n(380)
+credit_test <- credit %>% 
+  anti_join(credit_train, by="ID")
 ```
+```{r, echo=FALSE}
+# Train models on training data
+model_list <- lapply(formula_list, function(x) lm(x, data=credit_train))
+# Run models on training data and compute RMSE
+training_values <- lapply(model_list, function(x) predict(x, newdata=credit_train))
+RMSE_train <- sapply(training_values, function(x) rmse(x, credit_train$Balance))
+# Run models on test data and compute RMSE
+y_hats <- lapply(model_list, function(x) predict(x, newdata=credit_test))
+RMSE_test <- sapply(y_hats, function(x) rmse(x, credit_test$Balance))
+
+# Save results in a data frame. Note this data frame is in wide format.
+results <- data_frame(
+  num_coefficients = 1:7,
+  RMSE_train,
+  RMSE_test
+) 
+
+# Some cleaning of results
+results <- results %>% 
+  # More intuitive names:
+  rename(
+    `Training data` = RMSE_train,
+    `Test data` = RMSE_test
+  ) %>% 
+  # Convert results data frame to "tidy" data format i.e. long format, so that we
+  # can ggplot it
+  gather(type, RMSE, -num_coefficients)
+
+ggplot(results, aes(x=num_coefficients, y=RMSE, col=type)) +
+  geom_line() + 
+  labs(x="# of coefficients", y="RMSE", col="Data used to evaluate \nperformance of fitted model")
+```
+
+In this case, we notice that test error does not seem to significantly increase even as the regression models grow to contain more than four variables. Also, test error is sometimes less than the training error and sometimes more.
+
+The first difference is primarily due to the size of the training set. With 380 observations, a multiple linear regression with only seven variables will tend not to overfit the training data. This is because there is much more information in 380 observations about the relationships between the predictors and the response for the model to capture. As such, while more flexible models will capture more noise, there is generally more signal for them to capture as well (especially compared to models trained on only 20 observations).
+
+The second difference is due to the size of the test set. With only 20 observations in the test set, the model's performance on the test set essentially comes down to random chance. If the observations in the test set happen to mirror the observations in the training set pretty well (as in this case), test error will be similar to training error. If the test set has even one unusual outlier, though, it could significantly change the computed test set RMSE. In other words, the small test set makes test RMSE more variable.
+
